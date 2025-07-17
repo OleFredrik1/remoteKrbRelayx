@@ -1,0 +1,7 @@
+build
+__pycache__
+*.pfx
+*.ccache
+*.sam
+*.zip
+*.egg-info
