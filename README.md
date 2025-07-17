@@ -11,7 +11,7 @@ Note that this tool is by nowhere perfect in its current form. There are very ma
 The easiest way to install this is using pipx.
 
 ```
-pipx install git+https://github.com/OleFredrik1/RemoteKrbRelayx.git
+pipx install git+https://github.com/OleFredrik1/remoteKrbRelayx.git
 ```
 
 You can also clone the repo and use pip and install requirements.
@@ -159,7 +159,7 @@ If you try to do simple cross-session relaying with this tool, you will most lik
 
 But we can use the CredMarshal-trick from [James Forshaw](https://googleprojectzero.blogspot.com/2021/10/using-kerberos-for-authentication-relay.html). The CredMarshal-trick was patched on SMB when [CVE-2025-33073](https://www.synacktiv.com/publications/ntlm-reflection-is-dead-long-live-ntlm-reflection-an-in-depth-analysis-of-cve-2025) was patched, but it still works on [RPC and HTTP](https://x.com/decoder_it/status/1940086249420988572). Then we can the initial connection when the victim. This authentication has the right impersonation level. See eg. [this article](https://www.synacktiv.com/publications/relaying-kerberos-over-smb-using-krbrelayx) for more information about the CredMarshal-trick (note that the actual attack described in the article has been patched).
 
-Of course, this also works for SYSTEM-authentication, but often this has the right impersonation level, so the "vanilla"-attack is easier as it does not require registering or spoofing a marshalled DNS-pointer, but that depends on clsid. In my limited testing I found some where you had a SYSTEM-authentication where it only worked to relay the first request.
+Of course, this also works for SYSTEM-authentication, but often this has the right impersonation level, so the "vanilla"-attack is easier as it does not require registering or spoofing a marshalled DNS-pointer, but that depends on clsid. In my limited testing I found some clsids where you had a SYSTEM-authentication where it only worked to relay the first request.
 
 **NB:** Remember to set -spn to RPCSS/[host] when doing this attack, otherwise the RPC-server will not relay the kerberos authentication, as this tool only relays kerberos authentication with the expected SPN.
 
