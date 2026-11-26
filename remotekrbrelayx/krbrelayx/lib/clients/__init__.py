@@ -77,8 +77,8 @@ class ProtocolClient:
         raise RuntimeError('Virtual Function')
 
 def getClients():
-    from remotekrbrelayx.krbrelayx.lib.clients import httprelayclient, smbrelayclient
-    for module in [httprelayclient, smbrelayclient]:
+    from remotekrbrelayx.krbrelayx.lib.clients import httprelayclient, smbrelayclient, tdsrelayclient
+    for module in [httprelayclient, smbrelayclient, tdsrelayclient]:
         try:
             pluginClasses = set()
             try:
