@@ -6,6 +6,37 @@ The tool is mostly connecting together potato.py and rpcrelayserver.py by Sylvai
 
 Note that this tool is by nowhere perfect in its current form. There are very many combination of options and environments, and I have only tested some cases, and only on Linux.
 
+## About this fork (ckxckxckx3)
+
+This fork extends RemoteKrbRelayx to **relay coerced Kerberos to MSSQL**, and to run as a **pure listener** so the relay can be driven by an *external* trigger when the tool's own remote DCOM activation isn't available.
+
+Scenario : on a host where your foothold account has only **local** DCOM activation rights (remote `RemoteCreateInstance` is ACL-denied), you instead fire a **local** cross-session trigger yourself and let this tool be *only* the OXID resolver + relay. The coerced Kerberos AP-REQ is then relayed into a server that hosts MSSQL.
+
+### Features added
+
+- **MSSQL (TDS) relay client** (`-relay-target mssql://<host>`). Wraps the raw AP-REQ in GSS-Kerberos framing into a TDS `Login7`, relays MSSQL's reply back to the victim, and forwards the victim's as a `TDS_SSPI` continuation. New protocol client `MSSQL` in `remotekrbrelayx/krbrelayx/lib/clients/tdsrelayclient.py`.
+- **`-l` / `-listener` - listener-only mode.** Starts just the RPC relay server and waits for an **external** coercion/trigger instead of running the built-in `potato` trigger. No `target` and no credentials are required in this mode.
+- **`-q` / `-query` - MSSQL query to run on a successful relay** (repeatable). Omit it together with `-interactive` to drop into an interactive SQL shell (reachable with e.g. `nc 127.0.0.1 11000`).
+- **Optional `target` positional** - not required when `-l` is used.
+
+### Examples
+
+Listener mode (drive activation with your own local trigger), MSSQL interactive shell:
+
+```
+sudo python3 remoteKrbRelayx.py -l -local-ip 10.8.0.2 \
+    -relay-target mssql://<mssql-host> -spn MSSQLSvc/<mssql-host>.<domain> -interactive
+# then fire your local trigger on the target; connect with: nc 127.0.0.1 11000
+```
+
+Built-in remote trigger, relay to MSSQL and run a query:
+
+```
+KRB5CCNAME=user.ccache python3 remoteKrbRelayx.py '<domain>/<user>@<target>' -k -no-pass \
+    -dc-ip <dc> -local-ip 10.8.0.2 -relay-target mssql://<mssql-host> \
+    -spn MSSQLSvc/<mssql-host>.<domain> -clsid <clsid> -session-id <id> -q "SELECT SYSTEM_USER"
+```
+
 ## Installing
 
 The easiest way to install this is using pipx.
